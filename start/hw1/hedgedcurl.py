@@ -36,8 +36,10 @@ async def fetch(session, url):
     try:
         async with session.get(url) as response:
             body = await response.read()
-            headers_text = "\r\n".join(f"{k}: {v}" for k, v in response.headers.items())
-            text = f"{response.status} {response.reason}\n{headers_text}\n\n" + body.decode(errors="replace")
+            headers_text = "\n".join(f"{k}: {v}" for k, v in response.headers.items())
+            version = response.version
+            status_line = f"HTTP/{version.major}.{version.minor} {response.status} {response.reason}"
+            text = f"{status_line}\n{headers_text}\n\n" + body.decode(errors="replace")
             return "ok", url, text
     except asyncio.CancelledError:
         raise
@@ -52,11 +54,10 @@ async def fetch(session, url):
 
 
 async def main(urls, timeout):
-    connector = aiohttp.TCPConnector(ssl=False)
     timeout_cfg = aiohttp.ClientTimeout(total=timeout)
     errors = []
 
-    async with aiohttp.ClientSession(timeout=timeout_cfg, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
         tasks = [asyncio.create_task(fetch(session, url)) for url in urls]
         pending = set(tasks)
 
