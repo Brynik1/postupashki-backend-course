@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api import tasks
+from app.api import auth, tasks
 from app.config import Settings
 from app.container import Container
 from app.domain.exceptions import DomainError
@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
     )
     app.state.container = Container(Settings())
     app.include_router(tasks.router)
+    app.include_router(auth.router)
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, error: DomainError) -> JSONResponse:
