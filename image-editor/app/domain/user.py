@@ -1,10 +1,13 @@
 import hashlib
-import time
+import hmac
+import secrets
 import uuid
+
+_PBKDF2_ROUNDS = 100_000
 
 
 class User:
-    """Пользователь сервиса (пригодится с hw2)"""
+    """Пользователь сервиса"""
 
     def __init__(self, user_id: str, username: str, password_hash: str) -> None:
         self.id = user_id
@@ -24,8 +27,20 @@ class Session:
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    # храним вместе с солью, чтобы без перебора по готовым таблицам
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), _PBKDF2_ROUNDS
+    ).hex()
+    return f"pbkdf2:{_PBKDF2_ROUNDS}:{salt}:{digest}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return hash_password(password) == password_hash
+    algo, rounds, salt, digest = password_hash.split(":")
+    if algo != "pbkdf2":
+        return False
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), int(rounds)
+    ).hex()
+    # сравнение по константе, чтобы не подсказывать время угадывания
+    return hmac.compare_digest(candidate, digest)

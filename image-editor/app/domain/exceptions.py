@@ -13,6 +13,11 @@ class InvalidCredentials(DomainError):
     detail = "invalid username or password"
 
 
+class NotAuthorized(DomainError):
+    status_code = 401
+    detail = "missing or invalid token"
+
+
 class TaskNotFound(DomainError):
     status_code = 404
     detail = "task not found"

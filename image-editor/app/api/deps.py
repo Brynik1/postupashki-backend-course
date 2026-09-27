@@ -3,7 +3,7 @@ from fastapi import HTTPException, Request
 from app.application.auth_service import AuthService
 from app.application.task_service import TaskService
 from app.container import Container
-from app.domain.exceptions import InvalidCredentials
+from app.domain.exceptions import NotAuthorized
 from app.domain.user import Session
 
 
@@ -24,8 +24,8 @@ def get_current_session(request: Request) -> Session:
     auth_service = get_container(request).auth_service
     header = request.headers.get("Authorization") or ""
     if not header.startswith("Bearer "):
-        raise InvalidCredentials()
+        raise NotAuthorized()
     session = auth_service.resolve_token(header.removeprefix("Bearer ").strip())
     if session is None:
-        raise InvalidCredentials()
+        raise NotAuthorized()
     return session
