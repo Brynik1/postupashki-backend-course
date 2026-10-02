@@ -1,0 +1,35 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+      TASK_QUEUE: processing_tasks
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  processor:
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+    environment:
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+      TASK_QUEUE: processing_tasks
+      API_URL: http://api:8000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_started

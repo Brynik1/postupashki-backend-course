@@ -1,10 +1,14 @@
-from fastapi import HTTPException, Request
+from fastapi import Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.application.auth_service import AuthService
 from app.application.task_service import TaskService
 from app.container import Container
 from app.domain.exceptions import NotAuthorized
 from app.domain.user import Session
+
+# схема для Swagger UI: кнопка Authorize -> "Bearer <token>"
+_bearer = HTTPBearer(auto_error=False)
 
 
 def get_container(request: Request) -> Container:
@@ -19,13 +23,15 @@ def get_auth_service(request: Request) -> AuthService:
     return get_container(request).auth_service
 
 
-def get_current_session(request: Request) -> Session:
-    """Достает токен из Authorization: Bearer ... и проверяет его"""
+def get_current_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> Session:
+    """Проверяет Authorization: Bearer ... и сессию в хранилище"""
     auth_service = get_container(request).auth_service
-    header = request.headers.get("Authorization") or ""
-    if not header.startswith("Bearer "):
+    if credentials is None:
         raise NotAuthorized()
-    session = auth_service.resolve_token(header.removeprefix("Bearer ").strip())
+    session = auth_service.resolve_token(credentials.credentials)
     if session is None:
         raise NotAuthorized()
     return session

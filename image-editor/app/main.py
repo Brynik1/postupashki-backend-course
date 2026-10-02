@@ -13,7 +13,7 @@ def create_app() -> FastAPI:
         description="Сервис обработки фотографий: загрузка задач, статус, результат.",
         version="0.1.0",
     )
-    app.state.container = Container(Settings())
+    app.state.container = Container(Settings.from_env())
     app.include_router(tasks.router)
     app.include_router(auth.router)
 
