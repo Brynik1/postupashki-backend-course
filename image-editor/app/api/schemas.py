@@ -34,3 +34,8 @@ class TaskStatusResponse(BaseModel):
 class TaskResultResponse(BaseModel):
     status: str
     result: str | None = None
+
+
+class CommitRequest(BaseModel):
+    task_id: str
+    image: str  # base64 png от ImageProcessor

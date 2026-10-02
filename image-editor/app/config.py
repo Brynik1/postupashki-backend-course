@@ -11,6 +11,9 @@ class Settings:
     executor_workers: int = 8
     host: str = "0.0.0.0"
     port: int = 8000
+    # пусто = работать без брокера, в тех же потоках (для локальной разработки)
+    rabbit_url: str = ""
+    task_queue: str = "processing_tasks"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -20,4 +23,6 @@ class Settings:
             executor_workers=int(os.getenv("EXECUTOR_WORKERS", "8")),
             host=os.getenv("HOST", "0.0.0.0"),
             port=int(os.getenv("PORT", "8000")),
+            rabbit_url=os.getenv("RABBIT_URL", ""),
+            task_queue=os.getenv("TASK_QUEUE", "processing_tasks"),
         )
