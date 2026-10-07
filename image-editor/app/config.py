@@ -14,6 +14,8 @@ class Settings:
     # пусто = работать без брокера, в тех же потоках (для локальной разработки)
     rabbit_url: str = ""
     task_queue: str = "processing_tasks"
+    # общий секрет api <-> processor для вебхука /commit
+    commit_secret: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,4 +27,5 @@ class Settings:
             port=int(os.getenv("PORT", "8000")),
             rabbit_url=os.getenv("RABBIT_URL", ""),
             task_queue=os.getenv("TASK_QUEUE", "processing_tasks"),
+            commit_secret=os.getenv("COMMIT_SECRET", ""),
         )

@@ -1,3 +1,4 @@
+import copy
 import threading
 
 from app.domain.repositories import SessionRepository, TaskRepository, UserRepository
@@ -14,14 +15,17 @@ class RamTaskStorage(TaskRepository):
 
     def save(self, task: Task) -> Task:
         with self._lock:
-            self._data[task.task_id] = task
-        return task
+            # храним копию: наружу отдаем тоже копии, изменения только через save/update
+            self._data[task.task_id] = copy.deepcopy(task)
+        return copy.deepcopy(task)
 
     def update(self, task: Task) -> None:
         self.save(task)
 
     def get(self, task_id: str) -> Task | None:
-        return self._data.get(task_id)
+        with self._lock:
+            task = self._data.get(task_id)
+        return copy.deepcopy(task) if task is not None else None
 
 
 class RamUserStorage(UserRepository):
@@ -57,3 +61,7 @@ class RamSessionStorage(SessionRepository):
     def get(self, session_id: str) -> Session | None:
         with self._lock:
             return self._data.get(session_id)
+
+    def delete(self, session_id: str) -> None:
+        with self._lock:
+            self._data.pop(session_id, None)

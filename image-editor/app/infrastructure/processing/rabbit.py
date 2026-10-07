@@ -4,9 +4,10 @@ import pika
 
 from app.config import Settings
 from app.domain.task import Task
+from app.domain.task_executor import TaskExecutor
 
 
-class RabbitMQTaskExecutor:
+class RabbitMQTaskExecutor(TaskExecutor):
     """Публикует задачу в RabbitMQ; ImageProcessor - отдельный сервис"""
 
     def __init__(self, settings: Settings) -> None:

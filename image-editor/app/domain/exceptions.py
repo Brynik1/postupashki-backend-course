@@ -26,3 +26,13 @@ class TaskNotFound(DomainError):
 class TaskNotReady(DomainError):
     status_code = 409
     detail = "task is not ready yet"
+
+
+class TaskAlreadyReady(DomainError):
+    status_code = 409
+    detail = "task is already ready"
+
+
+class InvalidCommitPayload(DomainError):
+    status_code = 422
+    detail = "commit image is not valid base64"

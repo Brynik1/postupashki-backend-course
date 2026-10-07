@@ -1,25 +1,43 @@
-"""Фильтры изображения для ImageProcessor"""
-
 import io
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter
 
 
 def negative(image: Image.Image, parameters: dict) -> Image.Image:
-    return ImageOps.invert(image.convert("RGB"))
+    # свой инверт попиксельно; инвертируются только RGB-каналы, альфа остается
+    rgba = image.convert("RGBA")
+    r, g, b, a = rgba.split()
+    return Image.merge(
+        "RGBA",
+        (
+            r.point(lambda v: 255 - v),
+            g.point(lambda v: 255 - v),
+            b.point(lambda v: 255 - v),
+            a,
+        ),
+    )
 
 
 def flip_x(image: Image.Image, parameters: dict) -> Image.Image:
-    return image.transpose(Image.FLIP_TOP_BOTTOM)
+    # свое отражение относительно оси X, попиксельно
+    rgba = image.convert("RGBA")
+    w, h = rgba.size
+    src = rgba.load()
+    flipped = Image.new("RGBA", (w, h))
+    dst = flipped.load()
+    for y in range(h):
+        for x in range(w):
+            dst[x, y] = src[x, h - 1 - y]
+    return flipped
 
 
 def blur(image: Image.Image, parameters: dict) -> Image.Image:
-    radius = float(parameters.get("radius", 2.0))
+    radius = float((parameters or {}).get("radius", 2.0))
     return image.filter(ImageFilter.GaussianBlur(radius))
 
 
 def sharpen(image: Image.Image, parameters: dict) -> Image.Image:
-    percent = int(parameters.get("percent", 150))
+    percent = int((parameters or {}).get("percent", 150))
     return image.filter(ImageFilter.UnsharpMask(percent=percent))
 
 

@@ -29,3 +29,6 @@ class SessionRepository(ABC):
 
     @abstractmethod
     def get(self, session_id: str) -> Session | None: ...
+
+    @abstractmethod
+    def delete(self, session_id: str) -> None: ...

@@ -11,4 +11,6 @@ EXPOSE 8000
 
 # Порт берётся из окружения (по умолчанию 8000) - как и всё остальное из app/config.py
 ENV PORT="${PORT:-8000}"
+# без этого docker logs не видит python-логи (stdout не tty и буферизуется)
+ENV PYTHONUNBUFFERED=1
 CMD ["sh", "-c", "uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT}"]

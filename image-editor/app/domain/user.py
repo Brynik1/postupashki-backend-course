@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import secrets
-import uuid
+import time
 
 _PBKDF2_ROUNDS = 100_000
 
@@ -19,11 +19,17 @@ class User:
 
 
 class Session:
-    """Сессия аутентифицированного пользователя"""
+    """Сессия аутентифицированного пользователя с ограниченным сроком жизни"""
 
-    def __init__(self, user_id: str, session_id: str | None = None) -> None:
+    DEFAULT_TTL_SECONDS = 24 * 3600
+
+    def __init__(self, user_id: str, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> None:
         self.user_id = user_id
-        self.session_id = session_id or uuid.uuid4().hex
+        self.session_id = secrets.token_urlsafe(32)
+        self.expires_at = time.time() + ttl_seconds
+
+    def expired(self) -> bool:
+        return time.time() >= self.expires_at
 
 
 def hash_password(password: str) -> str:

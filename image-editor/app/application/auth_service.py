@@ -4,6 +4,10 @@ from app.domain.exceptions import InvalidCredentials, UserAlreadyExists
 from app.domain.repositories import SessionRepository, UserRepository
 from app.domain.user import Session, User, hash_password, verify_password
 
+# фейковый хеш, чтобы логин несуществующего пользователя занимал то же время,
+# что и логин существующего с неверным паролем (тайминг не палит, есть ли юзер)
+_DUMMY_HASH = hash_password("timing-equalizer-password")
+
 
 class AuthService:
     """Регистрация пользователей и проверка их токенов"""
@@ -31,11 +35,23 @@ class AuthService:
 
     def login(self, username: str, password: str) -> Session:
         user = self._users.get_by_username(username)
-        if user is None or not verify_password(password, user.password_hash):
+        # и для существующего, и для несуществующего юзера гоняем pbkdf2 -
+        # иначе время ответа подсказывает, зарегистрирован ли логин
+        if user is None:
+            verify_password(password, _DUMMY_HASH)
+            raise InvalidCredentials()
+        if not verify_password(password, user.password_hash):
             raise InvalidCredentials()
         session = Session(user_id=user.id)
         self._sessions.add(session)
         return session
 
     def resolve_token(self, token: str) -> Session | None:
-        return self._sessions.get(token)
+        session = self._sessions.get(token)
+        if session is None:
+            return None
+        if session.expired():
+            # истекшая сессия больше не действительна, из хранилища убираем
+            self._sessions.delete(token)
+            return None
+        return session

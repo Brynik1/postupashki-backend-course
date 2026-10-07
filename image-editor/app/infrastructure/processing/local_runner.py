@@ -1,23 +1,21 @@
+import base64
+import binascii
 import random
 import time
-import uuid
-from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
 from app.domain.repositories import TaskRepository
 from app.domain.task import Task, TaskStatus
+from app.domain.task_executor import TaskExecutor
 
-
-class TaskExecutor(ABC):
-    """Кто и как выполняет задачу (в hw3 станет очередью RabbitMQ)"""
-
-    @abstractmethod
-    def execute(self, task: Task) -> None:
-        pass
+# миниатюрная валидная png-картинка 1x1 на случай, если в таске нет изображения
+_PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
 
 
 class LocalImageProcessor(TaskExecutor):
-    """Пока выполняет все задачи в потоках этого же процесса"""
+    """Режим без брокера: выполняет задачи в потоках этого же процесса"""
 
     def __init__(
         self,
@@ -37,6 +35,16 @@ class LocalImageProcessor(TaskExecutor):
 
     def _process(self, task: Task) -> None:
         time.sleep(random.uniform(self._min_seconds, self._max_seconds))
+        # сначала result, потом статус: между ними никто не увидит ready без результата
+        task.result = self._fake_result(task)
         task.status = TaskStatus.ready
-        task.result = f"processed image: naive-negative-{uuid.uuid4().hex}.png"
         self._task_repository.update(task)
+
+    @staticmethod
+    def _fake_result(task: Task) -> bytes:
+        # результат всегда png-байты, как и от настоящего процессора;
+        # фейковый "фильтр" просто возвращает исходную картинку
+        try:
+            return base64.b64decode(task.payload.get("image") or "", validate=True)
+        except (binascii.Error, ValueError):
+            return _PNG_1X1

@@ -16,6 +16,7 @@ services:
     environment:
       RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
       TASK_QUEUE: processing_tasks
+      COMMIT_SECRET: ${COMMIT_SECRET:-local-dev-secret}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -28,6 +29,7 @@ services:
       RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
       TASK_QUEUE: processing_tasks
       API_URL: http://api:8000
+      COMMIT_SECRET: ${COMMIT_SECRET:-local-dev-secret}
     depends_on:
       rabbitmq:
         condition: service_healthy
