@@ -10,6 +10,7 @@ import pika
 import requests
 
 from filters import apply
+from metrics import FAILED_TASKS, FILTERS_USED, PROCESSING_TIME, expose_metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,8 +55,10 @@ def handle(channel, method, properties, body) -> None:
         image = base64.b64decode(payload["image"])
         name = (payload.get("filter") or {}).get("name", "")
         parameters = (payload.get("filter") or {}).get("parameters") or {}
-        processed = apply(name, image, parameters)
+        with PROCESSING_TIME.labels(filter=name).time():
+            processed = apply(name, image, parameters)
         commit_result(task_id, processed)
+        FILTERS_USED.labels(filter=name).inc()
         channel.basic_ack(delivery_tag=method.delivery_tag)
         return
     except requests.HTTPError as err:
@@ -79,6 +82,7 @@ def handle(channel, method, properties, body) -> None:
         time.sleep(1)
         return
     except Exception as err:
+        FAILED_TASKS.inc()
         log.error("task %s failed: %s", task_id, err)
         try:
             commit_failure(task_id or "", str(err))
@@ -115,4 +119,5 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    expose_metrics(9100)
     run()

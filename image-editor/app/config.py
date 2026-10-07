@@ -16,6 +16,9 @@ class Settings:
     task_queue: str = "processing_tasks"
     # общий секрет api <-> processor для вебхука /commit
     commit_secret: str = ""
+    # пусто = RAM-таблицы вместо БД и Redis (локальная разработка)
+    database_url: str = ""
+    redis_url: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -28,4 +31,6 @@ class Settings:
             rabbit_url=os.getenv("RABBIT_URL", ""),
             task_queue=os.getenv("TASK_QUEUE", "processing_tasks"),
             commit_secret=os.getenv("COMMIT_SECRET", ""),
+            database_url=os.getenv("DATABASE_URL", ""),
+            redis_url=os.getenv("REDIS_URL", ""),
         )
