@@ -14,12 +14,12 @@ class Container:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings()
-        self._pool = None
+        self._engine = None
         if self.settings.database_url:
-            from psycopg_pool import ConnectionPool
+            from sqlalchemy import create_engine
 
             run_migrations(self.settings.database_url)
-            self._pool = ConnectionPool(self.settings.database_url, open=True, min_size=1, max_size=8)
+            self._engine = create_engine(self.settings.database_url.replace('postgresql://', 'postgresql+psycopg://'), pool_size=8)
 
         self.user_repository = self._user_repository()
         self.session_repository = self._session_repository()
@@ -31,13 +31,13 @@ class Container:
         )
 
     def _user_repository(self):
-        if self._pool is not None:
-            return PostgresUserStorage(self._pool)
+        if self._engine is not None:
+            return PostgresUserStorage(self._engine)
         return RamUserStorage()
 
     def _task_repository(self):
-        if self._pool is not None:
-            return PostgresTaskStorage(self._pool)
+        if self._engine is not None:
+            return PostgresTaskStorage(self._engine)
         return RamTaskStorage()
 
     def _session_repository(self):

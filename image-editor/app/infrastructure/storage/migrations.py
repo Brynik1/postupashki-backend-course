@@ -1,8 +1,8 @@
-"""Простейший раннер SQL-миграций"""
+"""Простейший раннер SQL-миграций поверх SQLAlchemy-движка"""
 
 import os
 
-import psycopg
+from sqlalchemy import create_engine, text
 
 
 def run_migrations(database_url: str) -> None:
@@ -11,21 +11,29 @@ def run_migrations(database_url: str) -> None:
     if not files:
         return
 
-    with psycopg.connect(database_url) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                version TEXT PRIMARY KEY,
-                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    engine = create_engine(database_url.replace('postgresql://', 'postgresql+psycopg://', 1))
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version TEXT PRIMARY KEY,
+                        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                    """
+                )
             )
-            """
-        )
-        applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
-        for name in files:
-            if name in applied:
-                continue
-            sql = open(os.path.join(migrations_dir, name), encoding="utf-8").read()
-            conn.execute(sql)
-            conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (name,))
-            print(f"migration applied: {name}")
-        conn.commit()
+            applied = {row[0] for row in conn.execute(text("SELECT version FROM schema_migrations"))}
+            for name in files:
+                if name in applied:
+                    continue
+                sql = open(os.path.join(migrations_dir, name), encoding="utf-8").read()
+                conn.execute(text(sql))
+                conn.execute(
+                    text("INSERT INTO schema_migrations (version) VALUES (:version)"),
+                    {"version": name},
+                )
+                print(f"migration applied: {name}")
+    finally:
+        engine.dispose()

@@ -84,6 +84,11 @@ class TaskService:
         return task.result or b"", "png"
 
     def _get_or_404(self, task_id: str) -> Task:
+        try:
+            uuid.UUID(task_id)
+        except (ValueError, AttributeError):
+            # не-uuid, пришедший в пути/вебхуке, не должен долбить SQL
+            raise TaskNotFound()
         task = self._repository.get(task_id)
         if task is None:
             raise TaskNotFound()
