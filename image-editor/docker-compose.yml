@@ -1,0 +1,84 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: imagestudio
+      POSTGRES_PASSWORD: imagestudio
+      POSTGRES_DB: imagestudio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imagestudio"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+      TASK_QUEUE: processing_tasks
+      COMMIT_SECRET: ${COMMIT_SECRET:-local-dev-secret}
+      DATABASE_URL: postgresql://imagestudio:imagestudio@postgres:5432/imagestudio
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  processor:
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+    environment:
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+      TASK_QUEUE: processing_tasks
+      API_URL: http://api:8000
+      COMMIT_SECRET: ${COMMIT_SECRET:-local-dev-secret}
+    ports:
+      - "9100:9100"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
