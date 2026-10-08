@@ -9,12 +9,17 @@ type Spinlock struct {
 	locked atomic.Bool
 }
 
+// первые попытки крутим без уступки процессора; иначе это уже yield-лок
+const spinBeforeYield = 64
+
 func (s *Spinlock) Lock() {
-	for {
+	for i := 0; ; i++ {
 		if s.locked.CompareAndSwap(false, true) {
 			return
 		}
-		// Иначе можно голодать, если владелец не успеет отпустить замок
+		if i < spinBeforeYield {
+			continue
+		}
 		runtime.Gosched()
 	}
 }

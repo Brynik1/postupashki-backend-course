@@ -2,6 +2,7 @@ package mutex
 
 import (
 	"primitives/internal/futex"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -11,32 +12,33 @@ const (
 	contended // Замок занят и есть ждущие, будем будить при Unlock
 )
 
+// короткий спин перед переходом в ядро: на коротких критических
+// секциях экономит системные вызовы
+const spinBeforeSleep = 32
+
 type Mutex struct {
 	state uint32
 }
 
 func (m *Mutex) Lock() {
+	// быстрый путь
 	if atomic.CompareAndSwapUint32(&m.state, free, held) {
 		return
 	}
-	for {
-		state := atomic.LoadUint32(&m.state)
-		switch state {
-		case free:
-			// Берем как contended, раз ждущие уже есть
-			if atomic.CompareAndSwapUint32(&m.state, free, contended) {
-				return
-			}
-		case held:
-			if atomic.CompareAndSwapUint32(&m.state, held, contended) {
-				futex.Wait(&m.state, contended)
-			}
-			// Кас не прошел, значение поменялось, читаем заново
-		default:
-			// Спим только на contended: замок есть у кого-то и он разбудит,
-			// если значение уже поменялось то Wait не даст уснуть
-			futex.Wait(&m.state, contended)
+	// спин: пробуем забрать без засыпания, только с уступкой планировщика
+	for i := 0; i < spinBeforeSleep; i++ {
+		if atomic.CompareAndSwapUint32(&m.state, free, held) {
+			return
 		}
+		runtime.Gosched()
+	}
+	// медленный путь: Swap одновременно помечает, что есть ждущие, и забирает
+	// лок, если он освободился; спим на contended - владелец разбудит
+	for {
+		if atomic.SwapUint32(&m.state, contended) == free {
+			return
+		}
+		futex.Wait(&m.state, contended)
 	}
 }
 

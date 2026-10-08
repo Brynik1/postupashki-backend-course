@@ -15,7 +15,17 @@ type Once struct {
 	state uint32
 }
 
+// Do маленькая и хорошо инлайнится: повторные вызовы стоят одну загрузку
 func (o *Once) Do(f func()) {
+	// быстрый путь: уже готово
+	if atomic.LoadUint32(&o.state) == done {
+		return
+	}
+	o.doSlow(f)
+}
+
+// медленный путь: конкуренция за первый запуск и ожидание результата
+func (o *Once) doSlow(f func()) {
 	for {
 		state := atomic.LoadUint32(&o.state)
 		switch state {
