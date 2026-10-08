@@ -1,3 +1,2 @@
 #!/bin/sh
-# Переименуйте в run.sh и укажите команду запуска своей программы.
-exec python3 main.py "$@"
+exec python3 "$(dirname "$0")/main.py" "$@"

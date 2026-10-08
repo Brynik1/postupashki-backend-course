@@ -1,8 +1,10 @@
+import io
 import re
 import sys
 
 CRLF = b"\r\n"
 TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+DIGITS_RE = re.compile(r"^[0-9]+$")  # толькоascii-цифры: isdigit() верит юникод-квадратикам
 
 
 def fail(reason):
@@ -20,8 +22,11 @@ def next_crlf(data, pos, reason):
 def parse_start(line):
     tokens = line.split(" ")
     if len(tokens) == 3 and tokens[2] == "HTTP/1.1":
+        if not TOKEN_RE.match(tokens[0]) or not tokens[1]:
+            fail("bad_start_line")
         return "request", tokens[0], tokens[1], None, None
-    if tokens[0] == "HTTP/1.1" and len(tokens) >= 2 and tokens[1].isdigit() and len(tokens[1]) == 3:
+    if tokens[0] == "HTTP/1.1" and len(tokens) >= 2 \
+            and DIGITS_RE.match(tokens[1]) and len(tokens[1]) == 3:
         return "response", None, None, tokens[1], " ".join(tokens[2:])
     fail("bad_start_line")
 
@@ -42,19 +47,19 @@ def parse_headers(data, pos):
         if not TOKEN_RE.match(name):
             fail("bad_header")
         value = line[colon + 1:].strip(" \t")
-        if name.lower() == "content-length" and not value.isdigit():
+        if name.lower() == "content-length" and not DIGITS_RE.match(value):
             fail("bad_header")
         headers.append((name.lower(), value))
 
 
 def read_chunked(data, pos):
-    """Собирает тело, переданное по частям; возвращает (тело, смещение за концевиками)"""
-    body = b""
+    """Собирает тело, переданное по частям; возвращает тело"""
+    body = bytearray()  # += на bytes в цикле - квадратичная цена, bytearray линейная
     while True:
         end = next_crlf(data, pos, "bad_chunk")
         size_field = data[pos:end].decode("latin-1").split(";")[0].strip()
         pos = end + 2
-        if size_field == "" or any(c not in "0123456789abcdefABCDEF" for c in size_field):
+        if not size_field or any(c not in "0123456789abcdefABCDEF" for c in size_field):
             fail("bad_chunk")
         size = int(size_field, 16)
         if size == 0:
@@ -65,7 +70,7 @@ def read_chunked(data, pos):
                 pos = end + 2
                 if line == "":
                     break
-            return body, pos
+            return bytes(body)
         if pos + size > len(data):
             fail("bad_chunk")
         body += data[pos:pos + size]
@@ -75,21 +80,32 @@ def read_chunked(data, pos):
         pos += 2
 
 
+def is_chunked(headers):
+    # RFC 9112 6.1: значение разбирать с последней части, регистр букв произвольный
+    for name, value in headers:
+        if name == "transfer-encoding" and value.lower().rpartition(",")[2].strip() == "chunked":
+            return True
+    return False
+
+
+def content_length(headers):
+    """Возвращает длину тела; два поля с разными значениями - ошибка (RFC 9112 6.3)"""
+    seen = None
+    for name, value in headers:
+        if name != "content-length":
+            continue
+        if seen is not None and seen != value:
+            fail("bad_header")
+        seen = value
+    return int(seen) if seen is not None else None
+
+
 def read_body(data, pos, headers):
-    names = [name for name, _ in headers]
-    chunked = False
-    for name, value in headers:
-        if name == "transfer-encoding" and value == "chunked":
-            chunked = True
-
-    if chunked:
-        body, _ = read_chunked(data, pos)
-        return body
-
-    length = 0
-    for name, value in headers:
-        if name == "content-length":
-            length = int(value)
+    if is_chunked(headers):
+        return read_chunked(data, pos)
+    length = content_length(headers)
+    if length is None:
+        return b""
     if len(data) - pos < length:
         fail("incomplete_body")
     return data[pos:pos + length]
@@ -127,4 +143,5 @@ def main():
     print("\n".join(out))
 
 
-main()
+if __name__ == "__main__":
+    main()
