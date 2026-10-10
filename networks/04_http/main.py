@@ -1,15 +1,21 @@
-import io
 import re
 import sys
 
 CRLF = b"\r\n"
-TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-DIGITS_RE = re.compile(r"^[0-9]+$")  # толькоascii-цифры: isdigit() верит юникод-квадратикам
+TOKEN_RE = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+DIGITS_RE = re.compile(r"[0-9]+")
+
+
+class HTTPParseError(ValueError):
+    pass
 
 
 def fail(reason):
-    print("error %s" % reason)
-    sys.exit(1)
+    raise HTTPParseError(reason)
+
+
+def valid_field_value(value):
+    return all((ord(c) >= 32 and ord(c) != 127) or c == "\t" for c in value)
 
 
 def next_crlf(data, pos, reason):
@@ -21,13 +27,18 @@ def next_crlf(data, pos, reason):
 
 def parse_start(line):
     tokens = line.split(" ")
+    if tokens[0] == "HTTP/1.1":
+        if len(tokens) < 2 or not re.fullmatch(r"[0-9]{3}", tokens[1]):
+            fail("bad_start_line")
+        reason = " ".join(tokens[2:])
+        if not valid_field_value(reason):
+            fail("bad_start_line")
+        return "response", None, None, tokens[1], reason
     if len(tokens) == 3 and tokens[2] == "HTTP/1.1":
-        if not TOKEN_RE.match(tokens[0]) or not tokens[1]:
+        if not TOKEN_RE.fullmatch(tokens[0]) or not tokens[1] \
+                or any(ord(c) <= 32 or ord(c) == 127 for c in tokens[1]):
             fail("bad_start_line")
         return "request", tokens[0], tokens[1], None, None
-    if tokens[0] == "HTTP/1.1" and len(tokens) >= 2 \
-            and DIGITS_RE.match(tokens[1]) and len(tokens[1]) == 3:
-        return "response", None, None, tokens[1], " ".join(tokens[2:])
     fail("bad_start_line")
 
 
@@ -44,24 +55,32 @@ def parse_headers(data, pos):
         if colon <= 0:
             fail("bad_header")
         name = line[:colon]
-        if not TOKEN_RE.match(name):
+        if not TOKEN_RE.fullmatch(name):
             fail("bad_header")
         value = line[colon + 1:].strip(" \t")
-        if name.lower() == "content-length" and not DIGITS_RE.match(value):
+        if name.lower() == "content-length" and not DIGITS_RE.fullmatch(value):
+            fail("bad_header")
+        if not valid_field_value(value):
             fail("bad_header")
         headers.append((name.lower(), value))
 
 
+def chunk_size(line):
+    size, separator, _ = line.partition(";")
+    if separator:
+        size = size.rstrip(" \t")
+    if not re.fullmatch(r"[0-9A-Fa-f]+", size):
+        fail("bad_chunk")
+    return int(size, 16)
+
+
 def read_chunked(data, pos):
     """Собирает тело, переданное по частям; возвращает тело"""
-    body = bytearray()  # += на bytes в цикле - квадратичная цена, bytearray линейная
+    body = bytearray()
     while True:
         end = next_crlf(data, pos, "bad_chunk")
-        size_field = data[pos:end].decode("latin-1").split(";")[0].strip()
+        size = chunk_size(data[pos:end].decode("latin-1"))
         pos = end + 2
-        if not size_field or any(c not in "0123456789abcdefABCDEF" for c in size_field):
-            fail("bad_chunk")
-        size = int(size_field, 16)
         if size == 0:
             # после нулевой части могут идти поля концевика - читаем строки до пустой
             while True:
@@ -73,7 +92,7 @@ def read_chunked(data, pos):
             return bytes(body)
         if pos + size > len(data):
             fail("bad_chunk")
-        body += data[pos:pos + size]
+        body.extend(data[pos:pos + size])
         pos += size
         if data[pos:pos + 2] != CRLF:
             fail("bad_chunk")
@@ -81,29 +100,29 @@ def read_chunked(data, pos):
 
 
 def is_chunked(headers):
-    # RFC 9112 6.1: значение разбирать с последней части, регистр букв произвольный
-    for name, value in headers:
-        if name == "transfer-encoding" and value.lower().rpartition(",")[2].strip() == "chunked":
-            return True
-    return False
+    values = [value for name, value in headers if name == "transfer-encoding"]
+    return bool(values) and ",".join(values).lower().split(",")[-1].strip(" \t") == "chunked"
 
 
 def content_length(headers):
-    """Возвращает длину тела; два поля с разными значениями - ошибка (RFC 9112 6.3)"""
     seen = None
     for name, value in headers:
         if name != "content-length":
             continue
-        if seen is not None and seen != value:
+        # Сравниваем десятичные значения, включая записи с ведущими нулями.
+        number = 0
+        for digit in value:
+            number = number * 10 + ord(digit) - ord("0")
+        if seen is not None and seen != number:
             fail("bad_header")
-        seen = value
-    return int(seen) if seen is not None else None
+        seen = number
+    return seen
 
 
 def read_body(data, pos, headers):
+    length = content_length(headers)
     if is_chunked(headers):
         return read_chunked(data, pos)
-    length = content_length(headers)
     if length is None:
         return b""
     if len(data) - pos < length:
@@ -144,4 +163,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except HTTPParseError as err:
+        print("error %s" % err)
+        sys.exit(1)

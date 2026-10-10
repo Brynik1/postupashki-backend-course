@@ -2,7 +2,10 @@ import sys
 
 
 def clean_hex(text):
-    return bytes.fromhex("".join(text.split()))  # пробелы, переводы строк, двоеточия игнорируем
+    try:
+        return bytes.fromhex("".join(text.replace(":", "").split()))
+    except ValueError:
+        die("неверный hex-дамп: нужны пары шестнадцатеричных цифр")
 
 
 def mac(raw):
@@ -23,6 +26,8 @@ def checksum_valid(header):
 
 
 def eth(data, out):
+    if len(data) < 14:
+        die("обрезанный дамп: заголовок Ethernet требует 14 байт")
     ethertype = int.from_bytes(data[12:14], "big")
     out.append("eth.dst %s" % mac(data[0:6]))
     out.append("eth.src %s" % mac(data[6:12]))
@@ -31,13 +36,19 @@ def eth(data, out):
 
 
 def ipv4(packet, out):
+    if len(packet) < 20:
+        die("обрезанный дамп: заголовок IPv4 требует минимум 20 байт")
     version_ihl = packet[0]
     ihl = (version_ihl & 0x0F) * 4
     if version_ihl >> 4 != 4 or (version_ihl & 0x0F) < 5:
         die("битый заголовок IPv4: версия не 4 или поле IHL меньше 5")
     if len(packet) < ihl:
-        fail("обрезанный дамп: заголовок IPv4 требует %d байт" % ihl, 1)
+        die("обрезанный дамп: заголовок IPv4 требует %d байт" % ihl)
     total = int.from_bytes(packet[2:4], "big")
+    if total < ihl:
+        die("битый IPv4: total_length меньше IHL")
+    if len(packet) < total:
+        die("обрезанный дамп: пакет IPv4 требует %d байт" % total)
     flags_frag = int.from_bytes(packet[6:8], "big")
     flags = []
     if flags_frag & 0x4000:
@@ -63,7 +74,11 @@ TCP_FLAGS = [("FIN", 1), ("SYN", 2), ("RST", 4), ("PSH", 8), ("ACK", 16), ("URG"
 
 
 def tcp(segment, out):
+    if len(segment) < 20:
+        die("битый пакет: заголовку TCP не хватает байт")
     offset = (segment[12] >> 4) * 4
+    if offset < 20 or offset > len(segment):
+        die("битый TCP: data offset выходит за границы заголовка или пакета")
     flags = segment[13]
     set_flags = [name for name, bit in TCP_FLAGS if flags & bit]
 
@@ -78,6 +93,11 @@ def tcp(segment, out):
 
 
 def udp(segment, out):
+    if len(segment) < 8:
+        die("битый пакет: заголовку UDP не хватает байт")
+    length = int.from_bytes(segment[4:6], "big")
+    if length < 8:
+        die("битый UDP: length меньше заголовка")
     out.append("udp.src_port %d" % int.from_bytes(segment[0:2], "big"))
     out.append("udp.dst_port %d" % int.from_bytes(segment[2:4], "big"))
     out.append("udp.length %d" % int.from_bytes(segment[4:6], "big"))
@@ -100,20 +120,17 @@ def main():
 
     packet = data[14:]
     ihl, protocol, total = ipv4(packet, out)
-    transport_start = ihl
-
+    segment = packet[ihl:total]  # дополнение Ethernet не относится к IP
     header_len = 0
-    if protocol == 6:
-        if len(packet) < transport_start + 20:
-            die("обрезанный дамп: заголовку TCP не хватает байт")
-        header_len = tcp(packet[transport_start:], out)
-    elif protocol == 17:
-        if len(packet) < transport_start + 8:
-            die("обрезанный дамп: заголовку UDP не хватает байт")
-        header_len = udp(packet[transport_start:], out)
+    fragment_offset = int.from_bytes(packet[6:8], "big") & 0x1FFF
+    # В последующих фрагментах заголовка транспорта нет.
+    if fragment_offset == 0:
+        if protocol == 6:
+            header_len = tcp(segment, out)
+        elif protocol == 17:
+            header_len = udp(segment, out)
 
-    payload_len = total - ihl - header_len
-    out.append("payload.length %d" % max(0, payload_len))
+    out.append("payload.length %d" % (total - ihl - header_len))
     print("\n".join(out))
 
 
