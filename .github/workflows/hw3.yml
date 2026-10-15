@@ -1,0 +1,38 @@
+name: hw3 tests
+
+on: [push, pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install test deps
+        run: pip install pytest requests
+
+      - name: choose image payload (project is a photo editor)
+        # тест-файл куратора требует выбрать вариант payload; правим рабочую
+        # копию в раннере, в репозиторий ничего не попадает
+        run: sed -i 's/^    payload = dict()$/    payload = get_image_processor_payload()/' hard/hw3/tests/tests.py
+
+      - name: start stack (api + rabbitmq + processor)
+        run: docker compose up -d --build
+        working-directory: image-editor
+
+      - name: wait for api
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          echo "api did not start" && exit 1
+
+      - name: run tests
+        # cwd = каталог тестов, чтобы родной open("static/sigma.png") нашел файл
+        run: pytest -q tests.py
+        working-directory: hard/hw3/tests
