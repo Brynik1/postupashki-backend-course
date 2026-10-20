@@ -5,3 +5,14 @@
 -- Порядок: name по возрастанию, внутри героя role по возрастанию
 -- Строк:   47
 
+SELECT
+    h.name,
+    h.primary_attr,
+    h.attack_type,
+    r.role
+FROM heroes h
+JOIN hero_roles hr USING (hero_id)
+JOIN hero_roles r USING (hero_id)
+WHERE hr.role = 'carry'
+ORDER BY h.name, r.role;
+
