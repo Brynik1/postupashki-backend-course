@@ -5,3 +5,8 @@
 -- Порядок: country по возрастанию
 -- Строк:   15
 
+SELECT country
+FROM players
+WHERE mmr >= 10000
+GROUP BY country
+ORDER BY country;
